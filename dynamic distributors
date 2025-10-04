@@ -1,0 +1,146 @@
+// App.js
+import React, { useState, useEffect } from "react";
+import { View, Text, TextInput, Button, FlatList, StyleSheet, TouchableOpacity, Alert } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
+
+export default function App() {
+  const [customerName, setCustomerName] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
+  const [vehicleNo, setVehicleNo] = useState("");
+  const [driverName, setDriverName] = useState("");
+  const [items, setItems] = useState([{ name: "", serial: "" }]);
+  const [challanHistory, setChallanHistory] = useState([]);
+  const [searchChallan, setSearchChallan] = useState("");
+
+  useEffect(() => {
+    loadChallans();
+  }, []);
+
+  const loadChallans = async () => {
+    try {
+      const data = await AsyncStorage.getItem("challans");
+      if (data) setChallanHistory(JSON.parse(data));
+    } catch (err) {
+      console.log(err);
+    }
+  };
+
+  const saveChallan = async () => {
+    if (!customerName || !customerAddress) {
+      Alert.alert("Error", "Customer Name and Address are required");
+      return;
+    }
+    const challanNo = `CH-${Date.now()}`;
+    const newChallan = {
+      challanNo,
+      date: new Date().toLocaleDateString(),
+      customerName,
+      customerAddress,
+      vehicleNo,
+      driverName,
+      items,
+    };
+    const updatedHistory = [newChallan, ...challanHistory];
+    setChallanHistory(updatedHistory);
+    await AsyncStorage.setItem("challans", JSON.stringify(updatedHistory));
+    Alert.alert("Success", `Challan ${challanNo} saved`);
+    resetForm();
+  };
+
+  const resetForm = () => {
+    setCustomerName("");
+    setCustomerAddress("");
+    setVehicleNo("");
+    setDriverName("");
+    setItems([{ name: "", serial: "" }]);
+  };
+
+  const generatePDF = async (challan) => {
+    const html = `
+      <h1>DYNAMIC DISTRIBUTORS</h1>
+      <p>GAT NO.132/2/3, BEHIND SHELL PETROL PUMP, VILL-HINJAWADI, TAL-MULSHI, PUNE-411057</p>
+      <h2>Challan No: ${challan.challanNo}</h2>
+      <p>Date: ${challan.date}</p>
+      <p>Customer Name: ${challan.customerName}</p>
+      <p>Customer Address: ${challan.customerAddress}</p>
+      <p>Vehicle No: ${challan.vehicleNo}</p>
+      <p>Driver Name: ${challan.driverName}</p>
+      <h3>Items</h3>
+      <ul>
+        ${challan.items.map(item => `<li>${item.name} - Serial: ${item.serial}</li>`).join("")}
+      </ul>
+    `;
+    const { uri } = await Print.printToFileAsync({ html });
+    await Sharing.shareAsync(uri);
+  };
+
+  const addItem = () => setItems([...items, { name: "", serial: "" }]);
+  const updateItem = (index, key, value) => {
+    const updated = [...items];
+    updated[index][key] = value;
+    setItems(updated);
+  };
+
+  const filteredHistory = searchChallan
+    ? challanHistory.filter(c => c.challanNo.includes(searchChallan))
+    : challanHistory;
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.header}>Create Delivery Challan</Text>
+      <TextInput placeholder="Customer Name" style={styles.input} value={customerName} onChangeText={setCustomerName} />
+      <TextInput placeholder="Customer Address" style={styles.input} value={customerAddress} onChangeText={setCustomerAddress} />
+      <TextInput placeholder="Vehicle No" style={styles.input} value={vehicleNo} onChangeText={setVehicleNo} />
+      <TextInput placeholder="Driver Name" style={styles.input} value={driverName} onChangeText={setDriverName} />
+
+      <Text style={{ fontWeight: "bold", marginTop: 10 }}>Items:</Text>
+      {items.map((item, index) => (
+        <View key={index} style={{ flexDirection: "row", marginBottom: 5 }}>
+          <TextInput
+            placeholder="Item Name"
+            style={[styles.input, { flex: 1, marginRight: 5 }]}
+            value={item.name}
+            onChangeText={(text) => updateItem(index, "name", text)}
+          />
+          <TextInput
+            placeholder="Serial No"
+            style={[styles.input, { flex: 1 }]}
+            value={item.serial}
+            onChangeText={(text) => updateItem(index, "serial", text)}
+          />
+        </View>
+      ))}
+      <Button title="Add Item" onPress={addItem} />
+      <Button title="Save Challan" onPress={saveChallan} />
+
+      <Text style={styles.header}>Challan History</Text>
+      <TextInput
+        placeholder="Search by Challan No"
+        style={styles.input}
+        value={searchChallan}
+        onChangeText={setSearchChallan}
+      />
+      <FlatList
+        data={filteredHistory}
+        keyExtractor={(item) => item.challanNo}
+        renderItem={({ item }) => (
+          <View style={styles.challanItem}>
+            <Text>{item.challanNo} - {item.customerName}</Text>
+            <TouchableOpacity onPress={() => generatePDF(item)}>
+              <Text style={{ color: "blue" }}>Export PDF</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 10, marginTop: 30 },
+  header: { fontSize: 20, fontWeight: "bold", marginVertical: 10 },
+  input: { borderWidth: 1, borderColor: "#ccc", padding: 8, marginVertical: 5, borderRadius: 5 },
+  challanItem: { flexDirection: "row", justifyContent: "space-between", padding: 10, borderBottomWidth: 1, borderColor: "#ccc" },
+});
